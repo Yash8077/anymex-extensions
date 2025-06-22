@@ -8,7 +8,7 @@ const mangayomiSources = [
     "iconUrl": "https://raw.githubusercontent.com/ShadeOfChaos/Sora-Modules/refs/heads/main/AniCrush/logo.png",
     "typeSource": "single",
     "itemType": 1,
-    "version": "2.2.2",
+    "version": "2.2.3",
     "pkgPath": "anime/src/en/anicrush.js"
   }
 ];
@@ -74,7 +74,7 @@ class DefaultExtension extends MProvider {
     }
 
     const resp = await this.client.get(
-      `https://ac-api.ofchaos.com/api/anime/search?keyword=${encodeURIComponent(query)}&page=1&limit=24`
+      `https://ac-api.ofchaos.com/api/anime/search?keyword=${encodeURIComponent(query)}`
     );
     const data = JSON.parse(resp.body);
     if (!data?.status || !data?.result?.movies?.length) return { list: [], hasNextPage: false };
