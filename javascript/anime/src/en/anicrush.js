@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "isNsfw": false,
     "sourceCodeLanguage": 1,
     "itemType": 1,
-    "version": "1.0.0",
+    "version": "1.0.1", // Incremented version
     "apiUrl": "https://ac-api.ofchaos.com",
     "additionalParams": "sub"
 }, {
@@ -21,7 +21,7 @@ const mangayomiSources = [{
     "isNsfw": false,
     "sourceCodeLanguage": 1,
     "itemType": 1,
-    "version": "1.0.0",
+    "version": "1.0.1", // Incremented version
     "apiUrl": "https://ac-api.ofchaos.com",
     "additionalParams": "dub"
 }];
@@ -33,36 +33,57 @@ class DefaultExtension extends MProvider {
         this.client = new Client();
     }
 
-    // A helper to make API requests
+    // --- HELPER METHODS ---
+
+    /**
+     * Helper to make API requests and parse the JSON response.
+     * @param {string} url The URL to request.
+     * @returns {Promise<object>}
+     */
     async apiRequest(url) {
         const res = await this.client.get(url);
         return JSON.parse(res.body);
     }
 
-    // Maps the API status to the app's status code
+    /**
+     * Maps the API status to the AnymeX status code.
+     * @param {string} apiStatus The status from the API.
+     * @returns {number}
+     */
     parseStatus(apiStatus) {
         switch (apiStatus) {
-            case "RELEASING":
-                return 0; // Ongoing
-            case "FINISHED":
-                return 1; // Completed
-            case "NOT_YET_RELEASED":
-                return 3; // Not yet aired
-            default:
-                return 5; // Unknown
+            case "RELEASING": return 0; // Ongoing
+            case "FINISHED": return 1; // Completed
+            case "NOT_YET_RELEASED": return 3; // Not yet aired
+            default: return 5; // Unknown
         }
     }
 
-    // --- Core Methods ---
+    /**
+     * Maps an array of API results to the AnymeX manga object format.
+     * Inspired by the mapToManga function in anymex_special_1.js.
+     * @param {Array} dataArr The array of items from the API.
+     * @returns {Array<MManga>}
+     */
+    mapToManga(dataArr) {
+        return dataArr.map(item => ({
+            name: item.title?.english || item.title?.romaji || item.name,
+            imageUrl: item.image,
+            link: item.id // Pass the anime ID to getDetail
+        }));
+    }
+
+
+    // --- CORE METHODS ---
 
     async getPopular(page) {
-        // The original extension doesn't have a dedicated popular endpoint,
-        // so we'll use the search function to get trending anime.
+        // The API doesn't have a specific "popular" endpoint.
+        // We will use the search for "trending" as a substitute.
         return this.search("trending", page, []);
     }
 
     async getLatestUpdates(page) {
-        // Similarly, we can use search to find recently updated anime.
+        // We will use the search for "recent" as a substitute for latest updates.
         return this.search("recent", page, []);
     }
 
@@ -70,11 +91,8 @@ class DefaultExtension extends MProvider {
         const searchUrl = `${this.source.apiUrl}/api/anime/search?keyword=${query}&page=${page}`;
         const data = await this.apiRequest(searchUrl);
 
-        const animeList = (data.results || []).map(item => ({
-            name: item.title.english || item.title.romaji,
-            imageUrl: item.image,
-            link: item.id // Pass the anime ID to getDetail
-        }));
+        // **FIX**: The original code was looking for `data.results`, the API returns `data.result.movies`.
+        const animeList = this.mapToManga(data.result?.movies || []);
 
         const hasNextPage = data.meta?.hasNextPage || false;
         return {
@@ -89,7 +107,7 @@ class DefaultExtension extends MProvider {
         const data = await this.apiRequest(detailUrl);
 
         const anime = {
-            name: data.title.english || data.title.romaji,
+            name: data.title?.english || data.title?.romaji,
             imageUrl: data.image,
             description: data.description?.replace(/<[^>]*>?/gm, ''), // Remove HTML tags
             genre: data.genres,
@@ -102,9 +120,9 @@ class DefaultExtension extends MProvider {
         const episodes = (data.episodes || [])
             .filter(ep => ep.type === type)
             .map(ep => ({
-                name: `Episode ${ep.number}`,
+                name: `Episode ${ep.number} - ${ep.title}`,
                 url: ep.id, // Pass the episode ID to getVideoList
-                scanlator: ep.title,
+                scanlator: `Aired: ${new Date(ep.airedAt).toLocaleDateString()}`,
                 dateUpload: new Date(ep.airedAt).getTime().toString()
             }));
 
@@ -121,22 +139,11 @@ class DefaultExtension extends MProvider {
             return [];
         }
 
-        const videos = [];
-        data.sources.forEach(source => {
-            if (source.quality === 'default' || source.quality === 'backup') {
-                videos.push({
-                    url: source.url,
-                    originalUrl: source.url,
-                    quality: "Default"
-                });
-            } else {
-                 videos.push({
-                    url: source.url,
-                    originalUrl: source.url,
-                    quality: source.quality
-                });
-            }
-        });
+        const videos = (data.sources || []).map(source => ({
+            url: source.url,
+            originalUrl: source.url,
+            quality: source.quality.charAt(0).toUpperCase() + source.quality.slice(1) // Capitalize quality
+        }));
 
         const subtitles = (data.subtitles || [])
             .filter(sub => sub.lang.toLowerCase().includes('english'))
