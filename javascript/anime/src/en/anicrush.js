@@ -137,7 +137,6 @@ class AniCrush extends MProvider {
     return { success: true };
   }
 
-  // Unused but required methods for interface
   get supportsLatest() {
     return false;
   }
