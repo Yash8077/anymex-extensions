@@ -1,6 +1,6 @@
 # AnymeX Extensions
 
-This repository contains the available extension catalogues for the AnymeX app.
+This repository contains the available extension catalogues for the AnymeX app. Testing
 
 ## Guide
 just paste them into your:
