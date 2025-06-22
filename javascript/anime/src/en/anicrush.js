@@ -2,56 +2,52 @@ const mangayomiSources = [
   {
     "name": "AniCrush (ENG SUB)",
     "lang": "en",
+    "id": 99082314,
     "baseUrl": "https://anicrush.to",
     "apiUrl": "",
     "iconUrl": "https://raw.githubusercontent.com/ShadeOfChaos/Sora-Modules/refs/heads/main/AniCrush/logo.png",
     "typeSource": "single",
     "itemType": 1,
-    "version": "2.2.1",
+    "version": "2.2.2",
     "pkgPath": "anime/src/en/anicrush.js"
   }
 ];
 
-class AniCrush extends MProvider {
+class DefaultExtension extends MProvider {
   constructor() {
     super();
     this.client = new Client();
   }
 
-  async search(query, page = 1, filters) {
-    const result = await this.areRequiredServersUp();
-    if (!result.success) {
-      return {
-        list: [
-          {
-            name: result.searchTitle,
-            link: "#" + result.error,
-            imageUrl: "https://raw.githubusercontent.com/ShadeOfChaos/Sora-Modules/refs/heads/main/sora_host_down.png"
-          }
-        ],
-        hasNextPage: false
-      };
+  getHeaders(url) {
+    return {
+      Referer: "https://anicrush.to",
+      Origin: "https://anicrush.to"
+    };
+  }
+
+  async areRequiredServersUp() {
+    const hosts = ["https://anicrush.to", "https://ac-api.ofchaos.com"];
+    const checks = await Promise.allSettled(
+      hosts.map(async (host) => {
+        const res = await this.client.get(host);
+        return { host: host, ok: res.status === 200 };
+      })
+    );
+
+    for (const check of checks) {
+      if (check.status === "rejected" || !check.value.ok) {
+        const host = check.value?.host;
+        const message = `Required source ${host} is currently down.`;
+        return {
+          success: false,
+          error: encodeURIComponent(message),
+          searchTitle: message
+        };
+      }
     }
 
-    const resp = await this.client.get(
-      `https://ac-api.ofchaos.com/api/anime/search?keyword=${encodeURIComponent(query)}&page=1&limit=24`
-    );
-    const data = JSON.parse(resp.body);
-
-    if (!data?.status || !data?.result?.movies?.length) return { list: [], hasNextPage: false };
-
-    const list = data.result.movies.map((movie) => {
-      return {
-        name: movie.name,
-        imageUrl: this.getImage(movie.poster_path),
-        link: `https://anicrush.to/watch/${movie.slug}.${movie.id}`
-      };
-    });
-
-    return {
-      list: list,
-      hasNextPage: false
-    };
+    return { success: true };
   }
 
   getImage(path) {
@@ -62,15 +58,51 @@ class AniCrush extends MProvider {
     return `${base}/300x400/100/${reversed}.${extension}`;
   }
 
+  async search(query, page = 1, filters) {
+    const result = await this.areRequiredServersUp();
+    if (!result.success) {
+      return {
+        list: [
+          {
+            name: result.searchTitle,
+            imageUrl: "https://raw.githubusercontent.com/ShadeOfChaos/Sora-Modules/refs/heads/main/sora_host_down.png",
+            link: "#" + result.error
+          }
+        ],
+        hasNextPage: false
+      };
+    }
+
+    const resp = await this.client.get(
+      `https://ac-api.ofchaos.com/api/anime/search?keyword=${encodeURIComponent(query)}&page=1&limit=24`
+    );
+    const data = JSON.parse(resp.body);
+    if (!data?.status || !data?.result?.movies?.length) return { list: [], hasNextPage: false };
+
+    const list = data.result.movies.map((movie) => {
+      return {
+        name: movie.name,
+        imageUrl: this.getImage(movie.poster_path),
+        link: `https://anicrush.to/watch/${movie.slug}.${movie.id}`
+      };
+    });
+
+    return { list, hasNextPage: false };
+  }
+
   async getDetail(url) {
     if (url.startsWith("#")) {
       return {
-        name: decodeURIComponent(url.slice(1)),
-        chapters: []
+        description: decodeURIComponent(url.slice(1)) + " Please try again later.",
+        status: 5,
+        genre: [],
+        chapters: [],
+        link: ""
       };
     }
 
     const movieId = url.split(".").pop();
+
     const detailResp = await this.client.get(`https://ac-api.ofchaos.com/api/anime/info/${movieId}`);
     const detailData = JSON.parse(detailResp.body);
 
@@ -87,10 +119,16 @@ class AniCrush extends MProvider {
       }
     }
 
+    const genre = detailData.result?.genres ?? [];
+    const statusText = detailData.result?.status ?? "Unknown";
+    const status = statusText === "Completed" ? 1 : statusText === "Ongoing" ? 0 : 5;
+
     return {
-      name: detailData.result?.name ?? "Unknown",
       description: detailData.result?.overview ?? "No description.",
-      chapters: chapters
+      status,
+      genre,
+      chapters,
+      link: url
     };
   }
 
@@ -127,8 +165,9 @@ class AniCrush extends MProvider {
     const videoList = streamSources.map((src) => {
       return {
         url: src.file,
-        quality: `AniCrush - ${src.label ?? src.type}`,
         originalUrl: src.file,
+        quality: `AniCrush - ${src.label ?? src.type}`,
+        headers: this.getHeaders(),
         subtitles: tracks
           .filter((t) => t.kind === "captions" && t.label?.startsWith("English"))
           .map((sub) => {
@@ -143,47 +182,23 @@ class AniCrush extends MProvider {
     return videoList;
   }
 
-  async areRequiredServersUp() {
-    const hosts = ["https://anicrush.to", "https://ac-api.ofchaos.com"];
-    const checks = await Promise.allSettled(
-      hosts.map(async (host) => {
-        const res = await this.client.get(host);
-        return { host: host, ok: res.status === 200 };
-      })
-    );
-
-    for (const check of checks) {
-      if (check.status === "rejected" || !check.value.ok) {
-        const host = check.value?.host;
-        const message = `Required source ${host} is currently down.`;
-        return {
-          success: false,
-          error: encodeURIComponent(message),
-          searchTitle: message
-        };
-      }
-    }
-
-    return { success: true };
-  }
-
   get supportsLatest() {
     return false;
   }
 
-  async getLatestUpdates() {
+  async getLatestUpdates(page) {
     return { list: [], hasNextPage: false };
   }
 
-  async getPageList(url) {
-    return [];
-  }
-
-  getFilterList() {
-    return [];
+  async getPopular(page) {
+    return { list: [], hasNextPage: false };
   }
 
   getSourcePreferences() {
+    return [];
+  }
+
+  async getPageList(url) {
     return [];
   }
 
@@ -194,12 +209,4 @@ class AniCrush extends MProvider {
   async cleanHtmlContent(html) {
     return html;
   }
-
-  getHeaders(url) {
-    return {};
-  }
-
-  async getPopular(page) {
-    return { list: [], hasNextPage: false };
-  }
-}
+} 
